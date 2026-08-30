@@ -53,30 +53,12 @@ reliably (correlation 0.85-0.90 across 3 shift sizes) while TS-JEPA's
 implied effect does not (correlation −0.18 to −0.28) — a second,
 independent line of evidence for the same conclusion.
 
-**Follow-up work (`DECISIONS.md` D3, D7, D9, D11-D12):** the baseline's
-local attribution turned out to be wrong-signed *systematically*, not
-just at one patient — only 13.8%/7.4% of 500 random samples had the
-correct sign on `d(F)/dA`, `d(F)/dC`. Checking D's analogous coupling
-(never previously measured) found it *worse*: `d(D)/dS` wrong-signed on
-100% of samples. Two fixes were built and compared honestly (D9): a
-sign-only auxiliary loss gets all four sensitivities to ~100% at a
-modest cost (K=24 ratchet MAE 0.0246→0.0254, +3.3%); a structural fix —
-routing each coupled driver through a non-negative-weight sub-network so
-the sign is *provable before training*, not penalized in — gets the
-same 100%, exactly, by construction, but costs more (0.0246→0.0307,
-+24.8%). The soft fix wins on accuracy; the structural one is the more
-complete guarantee, and the one that surfaced D's problem in the first
-place. A susceptibility-free coupling probe (D3) closes the other open
-verification gap: both models get the F·C coupling's *sign* right
-everywhere, and TS-JEPA's version is exact *by construction* (its
-decoder never sees `x_prev` directly). Two further architectural ideas
-were tried and reported honestly: folding RK4 integration into
-TS-JEPA's decoder (D11) made things worse (+25% ratchet MAE); annealing
-VICReg once effective rank stabilizes (D7) only partially recovered the
-earlier degradation and cost held-out-susceptibility accuracy in return.
-A counterfactual-consistency loss (D12) fixes TS-JEPA's *mean* implied
-treatment effect and its same-sign rate (58-65% → 88-94%) but not its
-per-patient correlation with the truth, which stays negative.
+Five further follow-up improvements were built and compared honestly —
+two clean wins, two negative/mixed results, one partial fix — including
+a structural, by-construction fix for a systematically wrong-signed
+local attribution (`d(F)/dA`, `d(F)/dC` were wrong-signed on ~90% of
+samples; `d(D)/dS`, never previously checked, on 100%). Full numbers:
+`DECISIONS.md` D3, D7, D9, D11-D12.
 
 ## Architecture
 
