@@ -16,6 +16,9 @@ import sys, os
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import numpy as np
 import torch
+import matplotlib
+matplotlib.use("Agg")
+import matplotlib.pyplot as plt
 from data import make_train_val, make_probe_held_out_susceptibility, action_dim
 from models.baseline import MonotoneStep
 from models.baseline_coupled import MonotoneStepCoupled
@@ -47,6 +50,43 @@ def sign_correctness(model, X, ctx_feats, ercp, ts):
     }
 
 
+def fig_monotonic_fix(labels, sc_list, clean_mae, heldout_mae):
+    """Two panels: (left) sign-correctness % per sensitivity per model,
+    (right) K=24 ratchet MAE per model -- the honest D9 headline: both
+    fixes reach ~100% correctness, but at very different accuracy costs."""
+    sens_keys = list(sc_list[0].keys())
+    fig, axes = plt.subplots(1, 2, figsize=(13, 5))
+
+    x = np.arange(len(sens_keys))
+    width = 0.25
+    colors = ["tab:red", "tab:orange", "tab:green"]
+    for i, (label, sc) in enumerate(zip(labels, sc_list)):
+        vals = [sc[k] for k in sens_keys]
+        axes[0].bar(x + (i - 1) * width, vals, width, label=label, color=colors[i])
+    axes[0].set_xticks(x)
+    axes[0].set_xticklabels(sens_keys)
+    axes[0].set_ylabel("% of samples with correct sign")
+    axes[0].set_ylim(0, 108)
+    axes[0].axhline(100, ls=":", color="gray", lw=1)
+    axes[0].set_title("Sensitivity sign-correctness")
+    axes[0].legend(fontsize=8)
+
+    x2 = np.arange(2)
+    for i, label in enumerate(labels):
+        vals = [clean_mae[i], heldout_mae[i]]
+        axes[1].bar(x2 + (i - 1) * width, vals, width, label=label, color=colors[i])
+    axes[1].set_xticks(x2)
+    axes[1].set_xticklabels(["Clean\nin-dist.", "Held-out\nsusceptibility"])
+    axes[1].set_ylabel("ratchet MAE (K=24)")
+    axes[1].set_title("Accuracy cost of each fix")
+    axes[1].legend(fontsize=8)
+
+    plt.tight_layout()
+    plt.savefig("figures/fig_monotonic_fix.png", dpi=120)
+    plt.close()
+    print("saved figures/fig_monotonic_fix.png")
+
+
 def main():
     _, val = make_train_val(n_train=1500, n_val=400, T=T, seed=0)
     probe = make_probe_held_out_susceptibility(n=400)
@@ -64,6 +104,8 @@ def main():
         "baseline_monotonic (structural)": ("checkpoints/baseline_monotonic.pt", MonotoneStepCoupled),
     }
 
+    labels, sc_list, clean_mae, heldout_mae = [], [], [], []
+
     for label, (ckpt, cls) in models.items():
         model = cls(ctx_dim=action_dim())
         model.load_state_dict(torch.load(ckpt))
@@ -72,7 +114,10 @@ def main():
         sc = sign_correctness(model, Xs, ctxs, ercps, ts)
         print(f"\n=== {label} ===")
         print(f"  sign-correctness (n={n}): " + "  ".join(f"{k} {v:.1f}%" for k, v in sc.items()))
+        labels.append(label)
+        sc_list.append(sc)
 
+        axis_mae = {}
         for label2, dataset in [("clean in-distribution", val), ("held-out susceptibility", probe)]:
             Xd = torch.tensor(dataset["X"], dtype=torch.float32)
             cf, ec = build_ctx_and_ercp(dataset["ctx"], dataset["ercp"], T)
@@ -82,6 +127,11 @@ def main():
             fmae = full_mae_at_K(preds, Xd, start_t, 24)
             viol, total, _ = constraint_violation_rate(preds.numpy()[:, start_t:, :], dataset["ercp"][:, start_t:])
             print(f"  {label2}: K=24 ratchet MAE {rmae:.4f}  full MAE {fmae:.4f}  violations {viol}/{total}")
+            axis_mae[label2] = rmae
+        clean_mae.append(axis_mae["clean in-distribution"])
+        heldout_mae.append(axis_mae["held-out susceptibility"])
+
+    fig_monotonic_fix(labels, sc_list, clean_mae, heldout_mae)
 
 
 if __name__ == "__main__":

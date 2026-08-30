@@ -256,8 +256,9 @@ vs. 0.0420 unfixed), suggesting the split trunk itself, not just the two
 coupling terms, is a contributing factor. Reported plainly: a hard
 guarantee bought a real accuracy premium here, not a free lunch — the
 soft penalty remains the pragmatically better option once it's asked to
-do the same job. Run: `python scripts/test_invariants.py` (proof),
-`python scripts/train_baseline_monotonic.py`, then
+do the same job. Sign-correctness and MAE cost, all three checkpoints:
+`figures/fig_monotonic_fix.png`. Run: `python scripts/test_invariants.py`
+(proof), `python scripts/train_baseline_monotonic.py`, then
 `python scripts/compare_monotonic.py` for the full three-way comparison.
 
 ## D10 — Graph-attention encoder: a genuine negative result
@@ -326,6 +327,8 @@ direction reliably (100% sign agreement, corr 0.851) despite never
 training on counterfactual pairs. TS-JEPA's implied effect points the
 wrong way on average (corr −0.284) — worse than no signal. Replicates
 at shift=3 (base 0.80, JEPA −0.18) and shift=9 (base 0.90, JEPA −0.24).
+Per-patient scatter, true vs. implied effect, both models:
+`figures/fig_counterfactual.png`.
 
 **Scope:** validates response to the on-treatment action feature against
 a matched re-run — not behavior under referral-stratified confounding,

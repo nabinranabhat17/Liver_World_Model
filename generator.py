@@ -216,6 +216,51 @@ def check_constraints(X: np.ndarray, ercp_mask: np.ndarray) -> dict:
     return violations
 
 
+def plot_sanity_check(X, context, ercp_mask, meta, n_show=6, seed=1):
+    """A handful of example trajectories, all 8 fields, one PSC-like and
+    one PBC-like row -- the visual check D5 refers to: does the generator
+    actually produce sane-looking disease courses (ratchets creeping up,
+    S dropping at ERCP, A/C oscillating) before anything downstream gets
+    built on top of it."""
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+
+    rng = np.random.default_rng(seed)
+    psc_idx = [i for i, p in enumerate(meta) if p.disease_class == 0]
+    pbc_idx = [i for i, p in enumerate(meta) if p.disease_class == 1]
+    half = n_show // 2
+    show_idx = (list(rng.choice(psc_idx, size=min(half, len(psc_idx)), replace=False)) +
+                list(rng.choice(pbc_idx, size=min(n_show - half, len(pbc_idx)), replace=False)))
+
+    T = X.shape[1]
+    t = np.arange(T)
+    colors = plt.cm.tab10(np.linspace(0, 1, 8))
+    fig, axes = plt.subplots(2, (len(show_idx) + 1) // 2, figsize=(4.2 * ((len(show_idx) + 1) // 2), 7), sharey=True)
+    axes = axes.flatten()
+
+    for ax, i in zip(axes, show_idx):
+        p = meta[i]
+        for f, name in enumerate(FIELD_NAMES):
+            ax.plot(t, X[i, :, f], label=name, color=colors[f], lw=1.3)
+        for m in np.where(ercp_mask[i])[0]:
+            ax.axvline(m, color="gray", ls=":", lw=0.8)
+        udca = p.udca_start
+        if udca >= 0:
+            ax.axvline(udca, color="black", ls="--", lw=0.8)
+        disease = "PSC-like" if p.disease_class == 0 else "PBC-like"
+        ax.set_title(f"{disease}, susc={p.susceptibility:.2f}", fontsize=9)
+        ax.set_xlabel("month")
+    axes[0].set_ylabel("field value")
+    axes[0].legend(fontsize=7, ncol=2, loc="upper left")
+    fig.suptitle("Generator sanity check: example trajectories\n"
+                 "(dotted = ERCP event, dashed = UDCA start)")
+    plt.tight_layout()
+    plt.savefig("figures/generator_sanity_check.png", dpi=120)
+    plt.close()
+    print("saved figures/generator_sanity_check.png")
+
+
 if __name__ == "__main__":
     X, context, ercp_mask, meta = generate_dataset(n_patients=500, T=T_DEFAULT, seed=0)
     print("X shape:", X.shape)
@@ -229,3 +274,5 @@ if __name__ == "__main__":
     print("\nFraction PSC-like (disease_class=0):", (context[:, 0] == 0).mean())
     print("Fraction ever treated:", (context[:, 5] == 1).mean())
     print("Mean ERCP events per PSC patient:", ercp_mask[context[:, 0] == 0].sum(1).mean())
+
+    plot_sanity_check(X, context, ercp_mask, meta)

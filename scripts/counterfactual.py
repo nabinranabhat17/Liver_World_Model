@@ -37,6 +37,9 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import copy
 import numpy as np
 import torch
+import matplotlib
+matplotlib.use("Agg")
+import matplotlib.pyplot as plt
 from generator import simulate, _sample_patient, T_DEFAULT
 from data import make_context_features, action_dim
 from models.baseline import MonotoneStep
@@ -147,14 +150,47 @@ def run_probe(n_patients=100, shift_months=6):
     print(f"\nTrue (generator) effect on F: mean={true_effects.mean():+.4f}  std={true_effects.std():.4f}")
     print(f"  (negative = earlier treatment reduces fibrosis accumulation, as expected for responders)")
 
+    corrs = {}
     for name, eff in [("baseline", base_effects), ("TS-JEPA", jepa_effects)]:
         mae = np.mean(np.abs(eff - true_effects))
         same_sign = np.mean((np.sign(eff) == np.sign(true_effects)) | (np.abs(true_effects) < 1e-4))
         corr = np.corrcoef(eff, true_effects)[0, 1] if eff.std() > 0 and true_effects.std() > 0 else float("nan")
+        corrs[name] = corr
         print(f"\n{name} implied effect: mean={eff.mean():+.4f}  std={eff.std():.4f}")
         print(f"  MAE vs true effect: {mae:.4f}")
         print(f"  same sign as true effect: {same_sign*100:.0f}% of patients")
         print(f"  correlation with true effect across patients: {corr:.3f}")
+
+    fig_counterfactual(true_effects, base_effects, jepa_effects, corrs, shift_months)
+
+
+def fig_counterfactual(true_effects, base_effects, jepa_effects, corrs, shift_months):
+    """Per-patient scatter: true (generator) matched-pair effect on F vs.
+    each model's own implied effect from rolling out twice. Baseline
+    should track the diagonal; TS-JEPA should show no consistent trend --
+    the visual version of D12's headline correlation numbers."""
+    fig, axes = plt.subplots(1, 2, figsize=(11, 5), sharex=True, sharey=True)
+    lims = [min(true_effects.min(), base_effects.min(), jepa_effects.min()),
+            max(true_effects.max(), base_effects.max(), jepa_effects.max())]
+
+    for ax, eff, name, color in [
+        (axes[0], base_effects, "baseline", "tab:blue"),
+        (axes[1], jepa_effects, "TS-JEPA", "tab:orange"),
+    ]:
+        ax.axhline(0, color="gray", lw=0.8)
+        ax.axvline(0, color="gray", lw=0.8)
+        ax.plot(lims, lims, ls="--", color="gray", lw=1, label="perfect agreement")
+        ax.scatter(true_effects, eff, s=18, alpha=0.6, color=color)
+        ax.set_xlabel("true (generator) effect on F at +24mo")
+        ax.set_title(f"{name}  (r={corrs[name]:.2f})")
+        ax.set_xlim(lims); ax.set_ylim(lims)
+    axes[0].set_ylabel("model's implied effect on F")
+    axes[0].legend(fontsize=8)
+    fig.suptitle(f"Counterfactual validation: implied vs. true treatment effect (shift={shift_months}mo)")
+    plt.tight_layout()
+    plt.savefig("figures/fig_counterfactual.png", dpi=120)
+    plt.close()
+    print("saved figures/fig_counterfactual.png")
 
 
 if __name__ == "__main__":

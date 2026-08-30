@@ -198,7 +198,7 @@ Runtimes are all seconds to a couple minutes on CPU.
 
 ```bash
 python scripts/test_invariants.py   # constraint guarantees hold under RANDOM weights (run this first)
-python generator.py         # generate data + self-check: 0 violations, sane ranges
+python generator.py         # generate data + self-check: 0 violations, sane ranges -> figures/generator_sanity_check.png
 python scripts/train_baseline.py    # ~30s -> checkpoints/baseline.pt
 python scripts/train_jepa.py        # ~1-2min -> checkpoints/jepa.pt
 python scripts/jepa_denoise.py      # ~1-2min, the noise-augmentation experiment -> checkpoints/jepa_denoise.pt
@@ -215,13 +215,13 @@ python -m models.modalities  # modality-decoder sanity check
 python scripts/modality_eval.py      # state error translated into clinical units
 python scripts/train_neural_ode.py   # ~1min, continuous-time variant -> checkpoints/neural_ode.pt
 python scripts/compare_ode.py        # Neural-ODE vs discrete baseline
-python scripts/counterfactual.py     # matched-pair counterfactual validation (the most consequential result in the submission)
+python scripts/counterfactual.py     # matched-pair counterfactual validation (the most consequential result in the submission) -> figures/fig_counterfactual.png
 
 # follow-up improvements (DECISIONS.md D3, D7, D9, D11-D12) -- run after the above
 python scripts/coupling_probe.py            # susceptibility-free F*C coupling-strength probe, no retraining needed
 python scripts/train_baseline_jacobian.py   # ~30s, sign-only Jacobian penalty (F and D) -> checkpoints/baseline_jacobian.pt
 python scripts/train_baseline_monotonic.py  # ~30s, structural by-construction fix -> checkpoints/baseline_monotonic.pt
-python scripts/compare_monotonic.py         # 3-way: baseline / soft-penalty / structural fix, sign-correctness + MAE
+python scripts/compare_monotonic.py         # 3-way: baseline / soft-penalty / structural fix, sign-correctness + MAE -> figures/fig_monotonic_fix.png
 python scripts/train_jepa_ode.py            # ~1-2min, RK4 latent-ODE decoder for TS-JEPA -> checkpoints/jepa_ode_decoder.pt
 python scripts/train_jepa_anneal.py         # ~4min, D7 replica + VICReg-annealed counterpart -> checkpoints/jepa_150.pt, checkpoints/jepa_anneal.pt
 python scripts/train_jepa_counterfactual.py # ~5-8min, counterfactual-consistency loss -> checkpoints/jepa_counterfactual.pt
@@ -290,7 +290,7 @@ digital_liver/
 | `memo.md` | the memo (primary deliverable) |
 | `DECISIONS.md` | full reasoning trail: dead ends, one corrected mistake, an explainability fix, and three extended lines of investigation each paired with a later verification or fix (D10-D12) |
 | `EXTENSIONS.md` | four extended lines of investigation (E1-E4) beyond the core baseline-vs-JEPA comparison |
-| `figures/` | all generated plots |
+| `figures/` | all generated plots — `generator_sanity_check.png`, `explain_decompensation.png`, `fig_scorecard.png`, `fig_noise.png`, `fig_staleness.png`, `fig_monotonic_fix.png` (D9), `fig_counterfactual.png` (D12) |
 | `checkpoints/` | trained model weights |
 
 Every `scripts/*.py` file resolves `generator`, `data`, and `models.*` regardless of where it's invoked from — run any of them as `python scripts/<name>.py` from the repo root, exactly as in Run above.
