@@ -87,6 +87,40 @@ def test_M_gate_never_kills_gradient_sign():
     return bool((x_next[:, M] >= x[:, M] - 1e-6).all())
 
 
+def test_coupled_monotonicity_random_weights(n_inits=20, batch=64, seed=0):
+    """Prove (not measure) that MonotoneStepCoupled's d(F_next)/d(A_prev),
+    d(F_next)/d(C_prev), d(D_next)/d(S_prev), d(D_next)/d(A_prev) are
+    non-negative under UNTRAINED, randomly-initialized weights -- the
+    structural counterpart to DECISIONS.md D9's soft double-backward
+    penalty (scripts/train_baseline_jacobian.py). If this passes before a
+    single gradient step, the guarantee is a property of the
+    parameterisation, not something training has to learn or a bad
+    training run could undo."""
+    from models.baseline_coupled import MonotoneStepCoupled
+    torch.manual_seed(seed)
+    violations = {"dF_dA": 0, "dF_dC": 0, "dD_dS": 0, "dD_dA": 0}
+    total = 0
+    for _ in range(n_inits):
+        model = MonotoneStepCoupled(ctx_dim=8)  # fresh random init each iteration
+        x_t = torch.rand(batch, 8, requires_grad=True)
+        with torch.no_grad():
+            x_t[:, 6] *= 2.0  # M lives in [0,2]; keep inputs in-domain
+        ctx_feat_t = torch.rand(batch, 8)
+        ercp_flag_t = torch.randint(0, 2, (batch,)).float()
+
+        x_next = model(x_t, ctx_feat_t, ercp_flag_t)
+        F_next, D_next = x_next[:, 0], x_next[:, 1]
+        gF = torch.autograd.grad(F_next.sum(), x_t, retain_graph=True)[0]
+        gD = torch.autograd.grad(D_next.sum(), x_t)[0]
+
+        violations["dF_dA"] += int((gF[:, 4] < -1e-6).sum())
+        violations["dF_dC"] += int((gF[:, 5] < -1e-6).sum())
+        violations["dD_dS"] += int((gD[:, 2] < -1e-6).sum())
+        violations["dD_dA"] += int((gD[:, 4] < -1e-6).sum())
+        total += batch
+    return violations, total
+
+
 if __name__ == "__main__":
     print("=== Invariant tests (random weights -- guarantees, not statistics) ===\n")
 
@@ -110,5 +144,13 @@ if __name__ == "__main__":
     ok2 = test_M_gate_never_kills_gradient_sign()
     print(f"M increment stays non-negative even when F*C gate = 0: {'OK' if ok2 else 'FAIL'}")
 
-    all_zero = all(val == 0 for val in v.values()) and oob == 0 and drops > 0 and ok and ok2
+    cv, ctotal = test_coupled_monotonicity_random_weights()
+    print(f"\nMonotoneStepCoupled sensitivity-sign violations under random,\n"
+          f"UNTRAINED weights (want all 0, out of {ctotal} samples each):")
+    for k, val in cv.items():
+        status = "OK" if val == 0 else "FAIL"
+        print(f"  {k}: {val}  [{status}]")
+
+    all_zero = (all(val == 0 for val in v.values()) and oob == 0 and drops > 0 and ok and ok2
+                and all(val == 0 for val in cv.values()))
     print(f"\n{'ALL INVARIANTS HOLD' if all_zero else 'SOME INVARIANTS FAILED -- see above'}")

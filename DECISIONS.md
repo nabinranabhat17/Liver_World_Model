@@ -189,7 +189,7 @@ narrows the gap monotonically (σ=0.25: +0.0034→+0.0006, an 82%
 reduction) without closing it — directionally real, insufficient to
 flip the comparison.
 
-## D9 — Explainability: a wrong-signed attribution, found and fixed
+## D9 — Explainability: a wrong-signed attribution, found and fixed two different ways
 
 `scripts/explain.py` uses plain autograd, not a surrogate explainer —
 both models keep an explicit decoded state at every step, so a direct
@@ -202,18 +202,63 @@ problem independent of which architecture wins), then verify the F·C
 coupling's learned strength (D3), then try the causal graph as an
 attention mask (D10).
 
-**Diagnosed and fixed.** Broader check first: across 500 random
-samples, the baseline's `d(F_next)/dA` is positive only **13.8%** of the
-time, `d(F_next)/dC` only **7.4%** — the wrong sign is the *typical*
-case, not a one-off. `scripts/train_baseline_jacobian.py`: identical to
-the baseline, plus a double-backward term each step —
-`relu(-dF/dA) + relu(-dF/dC)` — supervising sign only (magnitude needs
-the hidden susceptibility), weight 1.0. **Completely fixed, at a small
-honest cost.** Sign-correctness: 13.8%/7.4% → **100%/100%**. At the
-original patient/month: dF/dA `-0.006→+0.003`, dF/dC `-0.005→+0.004`.
-Cost: clean K=24 MAE 0.0246→**0.0259** (+5.3%), held-out
-0.0791→**0.0844** (+6.7%). Violations untouched (0/N). Checkpoint:
+**Diagnosed broadly, and found worse than one patient suggested.**
+Across 500 random samples, the baseline's `d(F_next)/dA` is positive
+only **13.8%** of the time, `d(F_next)/dC` only **7.4%**. Checking
+further — prompted by building the structural fix below, which made it
+easy to ask the same question of D — `d(D_next)/dS` and `d(D_next)/dA`,
+never previously measured, are **0%** positive-correct: wrong-signed on
+*every* sample, despite the generator's `dD` also being non-negative in
+S and A. Two fixes were tried and compared honestly on equal footing,
+not just the first one that worked.
+
+**Fix 1 — soft penalty.** `scripts/train_baseline_jacobian.py`:
+identical to the baseline, plus a double-backward term each step —
+`relu(-dF/dA) + relu(-dF/dC) + relu(-dD/dS) + relu(-dD/dA)` —
+supervising sign only (magnitude needs the hidden susceptibility),
+weight 1.0. **Result: 100%/100%/99.3%/100% sign-correct**, at a real but
+modest cost: clean K=24 MAE 0.0246→**0.0254** (+3.3%), held-out
+0.0791→**0.0849** (+7.3%). Violations untouched (0/N). Checkpoint:
 `checkpoints/baseline_jacobian.pt`.
+
+**Fix 2 — structural guarantee.** `models/monotonic.py` +
+`models/baseline_coupled.py` (`MonotoneStepCoupled`): instead of
+penalising the wrong sign, remove the degree of freedom that causes it.
+F's and D's raw increment scores are each split into a "free" component
+with NO access at all to their coupled driver field(s), plus a
+`MonotonicCoupling` sub-network — non-negative weights (via `softplus`
+reparametrisation) composed with strictly-increasing activations — that
+is provably non-decreasing in those drivers for *any* trained weights.
+No training-time penalty needed: `scripts/test_invariants.py`'s
+`test_coupled_monotonicity_random_weights` proves all four sensitivities
+non-negative under random, **untrained** weights, before a single
+gradient step — the same "property of the parameterisation, not a
+statistical claim" guarantee `ConstraintHead` already makes for the
+ratchets themselves. **Result: 100%/100%/100%/100%, exactly, by
+construction** — but at a larger cost than the soft penalty: clean K=24
+MAE 0.0246→**0.0307** (+24.8%), held-out 0.0791→**0.0890** (+12.5%).
+Violations untouched (0/N). Checkpoint:
+`checkpoints/baseline_monotonic.pt`.
+
+**Honest comparison.** The structural fix is the more complete
+guarantee — provable before training, not 99.3%-ish empirically on one
+axis — and it's what surfaced D's problem in the first place; nobody had
+checked `d(D)/dS` until building it forced the question. But once the
+soft penalty is made equally complete (extended to cover D, not just
+F), it clearly wins on accuracy: roughly a third of the structural fix's
+cost, for the same practical sign-correctness. Likely reason, matching
+the risk flagged before building it: `F_free`/`D_free`'s restricted
+heads (32 hidden units, zero access to their excluded driver) have less
+capacity than the single 64-unit trunk that used to produce all 9 raw
+outputs together — the *full*-state MAE (all 8 channels, not just the
+5 constrained ones) is elevated for the structural variant too (0.0462
+vs. 0.0420 unfixed), suggesting the split trunk itself, not just the two
+coupling terms, is a contributing factor. Reported plainly: a hard
+guarantee bought a real accuracy premium here, not a free lunch — the
+soft penalty remains the pragmatically better option once it's asked to
+do the same job. Run: `python scripts/test_invariants.py` (proof),
+`python scripts/train_baseline_monotonic.py`, then
+`python scripts/compare_monotonic.py` for the full three-way comparison.
 
 ## D10 — Graph-attention encoder: a genuine negative result
 

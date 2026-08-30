@@ -1,19 +1,26 @@
 """
-Baseline training plus a Jacobian-sign auxiliary loss targeting D13/D20:
-gradient attribution through the plain baseline (`explain.py`) found small,
-WRONG-SIGNED sensitivities d(F_next)/dA and d(F_next)/dC at a specific
-patient/month, even though the generator's true structure has F's
+Baseline training plus a Jacobian-sign auxiliary loss targeting D9:
+gradient attribution through the plain baseline (`explain.py`) found
+WRONG-SIGNED sensitivities d(F_next)/dA and d(F_next)/dC on the large
+majority of samples, even though the generator's true structure has F's
 increment driven POSITIVELY by both (dF ~ susceptibility * (A + C),
-susceptibility > 0, so always >= 0 in A and C).
+susceptibility > 0, so always >= 0 in A and C). The comparison against
+the structural fix (models/baseline_coupled.py) then found D has the
+exact same problem for its own drivers S, A (dD ~ susceptibility *
+(0.7*S + 0.3*A)) -- in fact worse: d(D_next)/dS was wrong-signed on
+100% of samples, never previously diagnosed. Both are covered here so
+the two fixes (soft penalty vs. structural) are compared on equal
+footing.
 
-The fix tested here: a lightweight double-backward penalty, computed on a
-fresh minibatch every training step, that supervises the SIGN (not
-magnitude -- magnitude depends on the hidden susceptibility scalar, which
-the model can't know) of the model's own d(F_next)/dA and d(F_next)/dC,
-added on top of the existing one-step + annealed-multistep loss with
-weight `jac_w`. Everything else (architecture, schedule, optimizer) is
-identical to `train_baseline.py`, imported directly, so any difference in
-the resulting attribution is attributable to this one loss term.
+The fix tested here: a lightweight double-backward penalty, computed on
+a fresh minibatch every training step, that supervises the SIGN (not
+magnitude -- magnitude depends on the hidden susceptibility scalar,
+which the model can't know) of d(F_next)/dA, d(F_next)/dC, d(D_next)/dS,
+and d(D_next)/dA, added on top of the existing one-step +
+annealed-multistep loss with weight `jac_w`. Everything else
+(architecture, schedule, optimizer) is identical to `train_baseline.py`,
+imported directly, so any difference in the resulting attribution is
+attributable to this one loss term.
 """
 
 import sys, os
@@ -28,7 +35,7 @@ torch.manual_seed(0)
 np.random.seed(0)
 
 T = 60
-F_IDX, A_IDX, C_IDX = 0, 4, 5
+F_IDX, D_IDX, S_IDX, A_IDX, C_IDX = 0, 1, 2, 4, 5
 
 
 def jacobian_sign_loss(model, X, ctx_feats, ercp):
@@ -38,11 +45,13 @@ def jacobian_sign_loss(model, X, ctx_feats, ercp):
     ctx_t1 = ctx_feats[torch.arange(B), t_idx + 1]
     ercp_t1 = ercp[torch.arange(B), t_idx + 1]
     x_next = model(x_t, ctx_t1, ercp_t1)
-    F_next = x_next[:, F_IDX]
-    grad_x = torch.autograd.grad(F_next.sum(), x_t, create_graph=True)[0]
-    dF_dA = grad_x[:, A_IDX]
-    dF_dC = grad_x[:, C_IDX]
-    return torch.relu(-dF_dA).mean() + torch.relu(-dF_dC).mean()
+    F_next, D_next = x_next[:, F_IDX], x_next[:, D_IDX]
+    grad_F = torch.autograd.grad(F_next.sum(), x_t, retain_graph=True, create_graph=True)[0]
+    grad_D = torch.autograd.grad(D_next.sum(), x_t, create_graph=True)[0]
+    dF_dA, dF_dC = grad_F[:, A_IDX], grad_F[:, C_IDX]
+    dD_dS, dD_dA = grad_D[:, S_IDX], grad_D[:, A_IDX]
+    return (torch.relu(-dF_dA).mean() + torch.relu(-dF_dC).mean()
+            + torch.relu(-dD_dS).mean() + torch.relu(-dD_dA).mean())
 
 
 def main(jac_w=1.0, n_epochs=60, batch_size=128):

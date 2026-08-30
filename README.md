@@ -56,20 +56,27 @@ independent line of evidence for the same conclusion.
 **Follow-up work (`DECISIONS.md` D3, D7, D9, D11-D12):** the baseline's
 local attribution turned out to be wrong-signed *systematically*, not
 just at one patient — only 13.8%/7.4% of 500 random samples had the
-correct sign on `d(F)/dA`, `d(F)/dC`. A sign-only auxiliary loss (D9)
-fixes this completely (100%/100%) at a real but modest accuracy cost
-(K=24 ratchet MAE 0.0246→0.0259). A susceptibility-free coupling probe
-(D3) closes the other open verification gap: both models get the F·C
-coupling's *sign* right everywhere, and TS-JEPA's version is exact *by
-construction* (its decoder never sees `x_prev` directly). Two further
-architectural ideas were tried and reported honestly: folding RK4
-integration into TS-JEPA's decoder (D11) made things worse (+25%
-ratchet MAE); annealing VICReg once effective rank stabilizes (D7) only
-partially recovered the earlier degradation and cost
-held-out-susceptibility accuracy in return. A counterfactual-consistency
-loss (D12) fixes TS-JEPA's *mean* implied treatment effect and its
-same-sign rate (58-65% → 88-94%) but not its per-patient correlation
-with the truth, which stays negative.
+correct sign on `d(F)/dA`, `d(F)/dC`. Checking D's analogous coupling
+(never previously measured) found it *worse*: `d(D)/dS` wrong-signed on
+100% of samples. Two fixes were built and compared honestly (D9): a
+sign-only auxiliary loss gets all four sensitivities to ~100% at a
+modest cost (K=24 ratchet MAE 0.0246→0.0254, +3.3%); a structural fix —
+routing each coupled driver through a non-negative-weight sub-network so
+the sign is *provable before training*, not penalized in — gets the
+same 100%, exactly, by construction, but costs more (0.0246→0.0307,
++24.8%). The soft fix wins on accuracy; the structural one is the more
+complete guarantee, and the one that surfaced D's problem in the first
+place. A susceptibility-free coupling probe (D3) closes the other open
+verification gap: both models get the F·C coupling's *sign* right
+everywhere, and TS-JEPA's version is exact *by construction* (its
+decoder never sees `x_prev` directly). Two further architectural ideas
+were tried and reported honestly: folding RK4 integration into
+TS-JEPA's decoder (D11) made things worse (+25% ratchet MAE); annealing
+VICReg once effective rank stabilizes (D7) only partially recovered the
+earlier degradation and cost held-out-susceptibility accuracy in return.
+A counterfactual-consistency loss (D12) fixes TS-JEPA's *mean* implied
+treatment effect and its same-sign rate (58-65% → 88-94%) but not its
+per-patient correlation with the truth, which stays negative.
 
 ## Architecture
 
@@ -212,7 +219,9 @@ python scripts/counterfactual.py     # matched-pair counterfactual validation (t
 
 # follow-up improvements (DECISIONS.md D3, D7, D9, D11-D12) -- run after the above
 python scripts/coupling_probe.py            # susceptibility-free F*C coupling-strength probe, no retraining needed
-python scripts/train_baseline_jacobian.py   # ~30s, sign-only Jacobian penalty -> checkpoints/baseline_jacobian.pt
+python scripts/train_baseline_jacobian.py   # ~30s, sign-only Jacobian penalty (F and D) -> checkpoints/baseline_jacobian.pt
+python scripts/train_baseline_monotonic.py  # ~30s, structural by-construction fix -> checkpoints/baseline_monotonic.pt
+python scripts/compare_monotonic.py         # 3-way: baseline / soft-penalty / structural fix, sign-correctness + MAE
 python scripts/train_jepa_ode.py            # ~1-2min, RK4 latent-ODE decoder for TS-JEPA -> checkpoints/jepa_ode_decoder.pt
 python scripts/train_jepa_anneal.py         # ~4min, D7 replica + VICReg-annealed counterpart -> checkpoints/jepa_150.pt, checkpoints/jepa_anneal.pt
 python scripts/train_jepa_counterfactual.py # ~5-8min, counterfactual-consistency loss -> checkpoints/jepa_counterfactual.pt
@@ -248,12 +257,14 @@ digital_liver/
 | `modalities.py` | fixed modality-rendering functions (E2) |
 | `neural_ode.py` | continuous-time RK4 variant of the baseline (E3, modest positive result) |
 | `jepa_ode_decoder.py` | RK4 latent-ODE decoder for TS-JEPA (D11, negative result) |
+| `monotonic.py` | `PosLinear`/`MonotonicCoupling` — non-negative-weight building block for hard input-sensitivity guarantees (D9) |
+| `baseline_coupled.py` | `MonotoneStepCoupled` — structural fix for F/D's wrong-signed sensitivities (D9) |
 
 **`scripts/` — training, evaluation, and probes.**
 
 | file | role |
 |---|---|
-| `test_invariants.py` | proves the constraint guarantees hold for random weights, before training |
+| `test_invariants.py` | proves the constraint guarantees hold for random weights, before training — including `MonotoneStepCoupled`'s sensitivity-sign guarantee (D9) |
 | `train_baseline.py`, `train_jepa.py` | training scripts (one-step + annealed multistep; JEPA loss + VICReg + decode-anchor) |
 | `jepa_denoise.py` | the noise-augmentation experiment (trained on corrupted input, clean targets) |
 | `train_jepa_graph.py`, `train_neural_ode.py` | training scripts for the graph-attention and Neural-ODE extensions |
@@ -265,7 +276,9 @@ digital_liver/
 | `explain.py` | gradient-based attribution through the model's own rollout |
 | `figures_showcase.py` | regenerates the memo's summary figures |
 | `coupling_probe.py` | susceptibility-free F·C coupling-strength probe (D3) |
-| `train_baseline_jacobian.py` | baseline + sign-only Jacobian penalty, fixes the wrong-signed attribution (D9) |
+| `train_baseline_jacobian.py` | baseline + sign-only Jacobian penalty, fixes F's and D's wrong-signed attribution (D9) |
+| `train_baseline_monotonic.py` | trains `MonotoneStepCoupled`, the structural counterpart (D9) |
+| `compare_monotonic.py` | 3-way comparison: baseline / soft-penalty fix / structural fix (D9) |
 | `train_jepa_ode.py` | trains the RK4 latent-ODE decoder above (D11) |
 | `train_jepa_anneal.py` | trains the replica control and its VICReg-annealed counterpart (D7, partial/mixed result) |
 | `train_jepa_counterfactual.py` | TS-JEPA + counterfactual-consistency loss (D12, partial fix) |

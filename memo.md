@@ -169,18 +169,24 @@ sensitivities are mechanistically faithful to the true causal structure,
 and that gap matters more, not less, in a clinical explainability context
 than an aggregate-accuracy number would suggest.
 
-**Fixed, at a measured cost (D9).** The wrong sign turned out to be
-systematic, not a one-off: only 13.8%/7.4% of 500 random patient/month
-samples had the correct sign on `d(F)/dA`, `d(F)/dC`. A sign-only
-double-backward loss (magnitude left free — it depends on the hidden
-susceptibility) fixes this to 100%/100%, at a real, named cost: clean
-K=24 ratchet MAE 0.0246→0.0259 (+5.3%). Violations unaffected.
+**Fixed two ways, compared honestly (D9).** The wrong sign was
+systematic, not a one-off — and D turned out to have the identical
+problem, worse (`d(D)/dS` wrong-signed on 100% of samples, never
+previously checked). A sign-only double-backward penalty (soft) fixes
+all four sensitivities to ~100%, clean K=24 MAE 0.0246→0.0254 (+3.3%).
+A structural fix — each coupled driver routed through a non-negative-
+weight sub-network so the sign is provable *before training*, not
+penalized in — gets the same 100%, exactly, by construction, but costs
+more: 0.0246→0.0307 (+24.8%). The soft fix wins on accuracy; the
+structural one is the more complete guarantee. Violations unaffected
+either way.
 
 ## 8. Residual risk and what's next
 
 In priority order (`DECISIONS.md` D9 for the full arc — the first two
-below are now closed): (1) the wrong-signed attribution above is fixed,
-at a 5.3% accuracy cost; (2) the F·C coupling's *learned* strength is
+below are now closed): (1) the wrong-signed attribution above is fixed
+two ways, at a 3.3-24.8% accuracy cost depending on which; (2) the F·C
+coupling's *learned* strength is
 verified by a susceptibility-free ratio probe (D3): both models get the
 sign right everywhere; TS-JEPA's ratio is exact *by construction* (its
 decoder never sees `x_prev`), the baseline's is a real,
